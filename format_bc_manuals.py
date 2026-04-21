@@ -36,7 +36,11 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
-# Source Google Doc IDs  →  display titles
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+TOKEN_PATH = os.path.join(SCRIPT_DIR, "token.pickle")
+CREDS_PATH = os.path.join(SCRIPT_DIR, "credentials.json")
+
+# Source Google Doc IDs  ->  display titles
 DOCS = {
     "1sU8l8p6q4sFIjIHjuyIt29xAp-QzzVWzegmWmPtjpko": "Attendance Tool",
     "1Dfd2kzXtR4ACeygHKgttzmz98kIBE4LsdHK9EbMzBDE": "bestpractice_discussion_rubric_grading",
@@ -51,7 +55,7 @@ DOCS = {
 OUTPUT_FOLDER_ID = "1NYpaEBB4UtUdA2ObHEcSpZwrLe_3jRPj"  # BC_Manuals_Updated
 FOOTER_TEXT = "Brazosport College | CIE | D2L New Content Experience Page"
 
-# Note-box colors (hex → 0-1 float)
+# Note-box colors (hex -> 0-1 float)
 _NOTE_BG = {"red": 0xEB / 255, "green": 0xE8 / 255, "blue": 0xE2 / 255}
 _NOTE_BORDER = {"red": 0x8C / 255, "green": 0xB7 / 255, "blue": 0xC7 / 255}
 
@@ -62,16 +66,16 @@ _NOTE_BORDER = {"red": 0x8C / 255, "green": 0xB7 / 255, "blue": 0xC7 / 255}
 
 def get_credentials():
     creds = None
-    if os.path.exists("token.pickle"):
-        with open("token.pickle", "rb") as fh:
+    if os.path.exists(TOKEN_PATH):
+        with open(TOKEN_PATH, "rb") as fh:
             creds = pickle.load(fh)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file(CREDS_PATH, SCOPES)
             creds = flow.run_local_server(port=0)
-        with open("token.pickle", "wb") as fh:
+        with open(TOKEN_PATH, "wb") as fh:
             pickle.dump(creds, fh)
     return creds
 
@@ -169,14 +173,15 @@ def set_footer(docs_svc, doc_id):
     else:
         footer_id = doc_style["defaultFooterId"]
         # Clear existing footer content (delete from last paragraph to first)
-        footer_content = (
-            doc.get("footers", {}).get(footer_id, {}).get("content", [])
-        )
+        footer_content = doc.get("footers", {}).get(footer_id, {}).get("content", [])
         deletions = []
         for elem in footer_content:
             if "paragraph" not in elem:
                 continue
-            start, end = elem["startIndex"], elem["endIndex"]
+            start = elem.get("startIndex")
+            end = elem.get("endIndex")
+            if start is None or end is None:
+                continue
             if end - start > 1:  # skip paragraphs that are just \n
                 deletions.append((start, end - 1))
         for start, end in reversed(deletions):
@@ -250,7 +255,7 @@ def main():
         note_count = apply_note_formatting(docs_svc, new_id)
         set_footer(docs_svc, new_id)
         status = f"{note_count} note(s) styled" if note_count else "no notes found"
-        print(f"    → copied  |  {status}  |  footer set")
+        print(f"    -> copied  |  {status}  |  footer set")
 
     print("\nAll done! Check the BC_Manuals_Updated folder in Google Drive.")
 
