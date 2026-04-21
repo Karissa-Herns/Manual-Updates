@@ -108,6 +108,21 @@ def _find_note_paragraphs(doc):
     return results
 
 
+def _find_footer_paragraph_range(doc, footer_id, text):
+    """Return the paragraph range for the footer text, if present."""
+    footer_content = doc.get("footers", {}).get(footer_id, {}).get("content", [])
+    for elem in footer_content:
+        if "paragraph" not in elem:
+            continue
+        start = elem.get("startIndex")
+        end = elem.get("endIndex")
+        if start is None or end is None:
+            continue
+        if text in _paragraph_text(elem["paragraph"]):
+            return start, end
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Formatting requests
 # ---------------------------------------------------------------------------
@@ -170,59 +185,70 @@ def set_footer(docs_svc, doc_id):
             body={"requests": [{"createFooter": {"type": "DEFAULT"}}]},
         ).execute()
         footer_id = result["replies"][0]["createFooter"]["footerId"]
+        doc = docs_svc.documents().get(documentId=doc_id).execute()
     else:
         footer_id = doc_style["defaultFooterId"]
-        # Clear existing footer content (delete from last paragraph to first)
-        footer_content = doc.get("footers", {}).get(footer_id, {}).get("content", [])
-        deletions = []
-        for elem in footer_content:
-            if "paragraph" not in elem:
-                continue
-            start = elem.get("startIndex")
-            end = elem.get("endIndex")
-            if start is None or end is None:
-                continue
-            if end - start > 1:  # skip paragraphs that are just \n
-                deletions.append((start, end - 1))
-        for start, end in reversed(deletions):
-            requests.append(
-                {
-                    "deleteContentRange": {
-                        "range": {
-                            "startIndex": start,
-                            "endIndex": end,
-                            "segmentId": footer_id,
-                        }
+
+    footer_content = doc.get("footers", {}).get(footer_id, {}).get("content", [])
+    deletions = []
+    for elem in footer_content:
+        if "paragraph" not in elem:
+            continue
+        start = elem.get("startIndex")
+        end = elem.get("endIndex")
+        if start is None or end is None:
+            continue
+        if end - start > 1:  # skip paragraphs that are just \n
+            deletions.append((start, end - 1))
+    for start, end in reversed(deletions):
+        requests.append(
+            {
+                "deleteContentRange": {
+                    "range": {
+                        "startIndex": start,
+                        "endIndex": end,
+                        "segmentId": footer_id,
                     }
                 }
-            )
+            }
+        )
 
-    # Insert footer text at position 1 (after any structural character)
     requests.append(
         {
             "insertText": {
-                "location": {"index": 1, "segmentId": footer_id},
+                "endOfSegmentLocation": {"segmentId": footer_id},
                 "text": FOOTER_TEXT,
-            }
-        }
-    )
-    # Center-align the footer paragraph
-    requests.append(
-        {
-            "updateParagraphStyle": {
-                "range": {
-                    "startIndex": 1,
-                    "endIndex": 1 + len(FOOTER_TEXT),
-                    "segmentId": footer_id,
-                },
-                "paragraphStyle": {"alignment": "CENTER"},
-                "fields": "alignment",
             }
         }
     )
 
     docs_svc.documents().batchUpdate(
         documentId=doc_id, body={"requests": requests}
+    ).execute()
+
+    doc = docs_svc.documents().get(documentId=doc_id).execute()
+    footer_range = _find_footer_paragraph_range(doc, footer_id, FOOTER_TEXT)
+    if not footer_range:
+        return
+
+    start, end = footer_range
+    docs_svc.documents().batchUpdate(
+        documentId=doc_id,
+        body={
+            "requests": [
+                {
+                    "updateParagraphStyle": {
+                        "range": {
+                            "startIndex": start,
+                            "endIndex": end,
+                            "segmentId": footer_id,
+                        },
+                        "paragraphStyle": {"alignment": "CENTER"},
+                        "fields": "alignment",
+                    }
+                }
+            ]
+        },
     ).execute()
 
 
